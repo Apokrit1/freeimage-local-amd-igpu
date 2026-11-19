@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>freeimage local</title>
+<style>
+  :root {
+    --paper: #fbfbfa; --surface: #fff; --ink: #0b0b0c; --ink-2: #6e6e73; --line: rgba(0,0,0,.09);
+    --fill: rgba(118,118,128,.12); color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #000; --surface: #1c1c1e; --ink: #f5f5f7; --ink-2: #98989d; --line: rgba(255,255,255,.12);
+      --fill: rgba(118,118,128,.24); color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 640px; margin: 0 auto; padding: 28px 20px 60px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .brand { font-weight: 700; letter-spacing: -.02em; font-size: 19px; }
+  .brand span { color: var(--ink-2); font-weight: 500; }
+  .state { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .box { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 14px; box-shadow: 0 10px 30px -18px rgba(0,0,0,.25); }
+  textarea { width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); font: inherit; font-size: 18px; min-height: 84px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .seg { display: inline-flex; background: var(--fill); border-radius: 12px; padding: 3px; }
+  .seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 9px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .seed { width: 110px; border: 0; background: var(--fill); color: var(--ink); border-radius: 12px; padding: 8px 10px; font: inherit; font-size: 14px; }
+  .go { border: 0; background: var(--ink); color: var(--paper); font: inherit; font-weight: 600; border-radius: 999px; padding: 10px 22px; cursor: pointer; }
+  .go:disabled { opacity: .4; cursor: default; }
+  .stage { margin-top: 22px; }
+  .frame { position: relative; border-radius: 20px; overflow: hidden; background: var(--fill); }
+  .frame img { display: block; width: 100%; height: auto; }
+  .frame.busy::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.18) 50%, transparent 70%); background-size: 200% 100%; animation: sh 1.4s linear infinite; }
+  @keyframes sh { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+  .meta { margin: 10px 2px 0; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; gap: 12px; }
+  .meta a { color: var(--ink); }
+  .err { margin-top: 14px; color: #d70015; font-size: 15px; }
+  h2 { font-size: 17px; margin: 34px 0 12px; letter-spacing: -.01em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; display: block; cursor: pointer; background: var(--fill); }
+  footer { margin-top: 40px; font-size: 13px; color: var(--ink-2); }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">freeimage <span>local</span></div>
+    <div class="state" id="state">Z-Image Turbo · int8</div>
+  </header>
+
+  <form class="box" id="form" autocomplete="off">
+    <textarea id="prompt" placeholder="A red fox standing in fresh snow at golden hour" autofocus></textarea>
+    <div class="row">
+      <div class="seg" id="shape" role="group" aria-label="Shape">
+        <button type="button" data-v="1024x1024" aria-pressed="true">1:1</button>
+        <button type="button" data-v="896x1152" aria-pressed="false">3:4</button>
+        <button type="button" data-v="768x1344" aria-pressed="false">9:16</button>
+        <button type="button" data-v="1344x768" aria-pressed="false">16:9</button>
+      </div>
+      <div class="seg" id="steps" role="group" aria-label="Quality">
+        <button type="button" data-v="6" aria-pressed="false">Fast</button>
+        <button type="button" data-v="8" aria-pressed="true">Best</button>
+      </div>
+    </div>
+    <div class="row">
+      <input class="seed" id="seed" inputmode="numeric" placeholder="Random seed">
+      <button class="go" id="go" type="submit">Generate</button>
+    </div>
+  </form>
+
+  <section class="stage" id="stage" hidden>
+    <div class="frame" id="frame"><img id="img" alt=""></div>
+    <div class="meta"><span id="info"></span><a id="dl" href="#">Download</a></div>
+  </section>
+  <p class="err" id="err" hidden></p>
+
+  <h2 id="hh" hidden>History</h2>
+  <div class="grid" id="grid"></div>
+
+  <footer>Runs entirely on this machine. Images are saved to <code>outputs/</code>. · <a href="https://freeimage.dev" target="_blank" rel="noopener">freeimage.dev</a></footer>
+</main>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const pick = (el) => el.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  });
+  pick($("#shape")); pick($("#steps"));
+  const val = (el) => el.querySelector('[aria-pressed="true"]').dataset.v;
+
+  const show = (r) => {
+    $("#stage").hidden = false;
+    $("#img").src = r.url; $("#img").alt = r.prompt || "";
+    $("#dl").href = r.url + "?dl=1";
+    $("#info").textContent = [`${r.width} × ${r.height}`, r.seconds ? `${r.seconds} s` : "", `seed ${r.seed}`].filter(Boolean).join("  ·  ");
+  };
+
+  const history = async () => {
+    const items = await (await fetch("/api/history")).json();
+    $("#hh").hidden = !items.length;
+    $("#grid").replaceChildren(...items.map((it) => {
+      const i = new Image(); i.src = it.url; i.loading = "lazy"; i.alt = it.prompt || ""; i.title = it.prompt || "";
+      i.onclick = () => { show(it); $("#prompt").value = it.prompt || ""; scrollTo({ top: 0, behavior: "smooth" }); };
+      return i;
+    }));
+  };
+
+  $("#form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const prompt = $("#prompt").value.trim(); if (!prompt) return $("#prompt").focus();
+    const [width, height] = val($("#shape")).split("x").map(Number);
+    $("#go").disabled = true; $("#err").hidden = true;
+    $("#stage").hidden = false; $("#frame").classList.add("busy");
+    $("#img").style.aspectRatio = `${width} / ${height}`;
+    const t0 = performance.now();
+    const tick = setInterval(() => { $("#state").textContent = `Generating… ${((performance.now() - t0) / 1000).toFixed(0)} s`; }, 250);
+    try {
+      const r = await fetch("/api/generate", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt, width, height, steps: +val($("#steps")), seed: $("#seed").value.trim() }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Something went wrong");
+      show(d); history();
+    } catch (err) {
+      $("#err").textContent = err.message; $("#err").hidden = false;
+    } finally {
+      clearInterval(tick); $("#state").textContent = "Z-Image Turbo · int8";
+      $("#frame").classList.remove("busy"); $("#go").disabled = false;
+    }
+  });
+  $("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#form").requestSubmit(); });
+  history();
+})();
+</script>
+</body>
+</html>
