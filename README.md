@@ -117,6 +117,13 @@ Tested on the same card so you don't have to:
 
 On laptops, heat matters more than any flag. The 3060 starts throttling around 87–89 °C and runs 10–25% faster when cool.
 
+## Support
+
+This repo and [freeimage.dev](https://freeimage.dev) are free and run on one laptop at home. If they saved you time or GPU money,
+you can [sponsor the work on GitHub](https://github.com/sponsors/mgolcu00). It pays for power and parts, and keeps the site free.
+
+<a href="https://github.com/sponsors/mgolcu00"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub"></a>
+
 ## Credits
 
 - [Z-Image Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) by Tongyi-MAI (Alibaba), Apache 2.0
