@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="freeimage">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<title>freeimage local — AMD iGPU Edition</title>
+<style>
+  :root {
+    --paper: #fbfbfa; --surface: #fff; --ink: #0b0b0c; --ink-2: #6e6e73; --line: rgba(0,0,0,.09);
+    --fill: rgba(118,118,128,.12); --accent: #ed1c24; --accent-soft: rgba(237,28,36,.1); color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #0b0b0d; --surface: #18181b; --ink: #f5f5f7; --ink-2: #98989d; --line: rgba(255,255,255,.12);
+      --fill: rgba(118,118,128,.24); --accent: #ff4d4d; --accent-soft: rgba(255,77,77,.14); color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 680px; margin: 0 auto; padding: 24px 20px 60px; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .brand { font-weight: 700; letter-spacing: -.02em; font-size: 20px; display: flex; align-items: center; gap: 8px; }
+  .brand img { width: 24px; height: 24px; border-radius: 6px; }
+  .brand span { color: var(--ink-2); font-weight: 500; }
+  .badge { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 3px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .telemetry { text-align: right; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+  .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .install-btn { border: 1px solid var(--accent); background: var(--accent-soft); color: var(--accent); font: inherit; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; cursor: pointer; transition: all .15s; }
+  .install-btn:hover { background: var(--accent); color: #fff; }
+  .ram-pill { display: inline-flex; align-items: center; gap: 6px; background: var(--fill); padding: 3px 9px; border-radius: 999px; font-size: 12px; }
+  .ram-bar { width: 44px; height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .ram-fill { height: 100%; background: var(--ink); width: 50%; transition: width .3s ease; }
+  .conn-banner { margin-bottom: 14px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); padding: 11px 14px; border-radius: 16px; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .conn-banner[hidden] { display: none !important; }
+  .conn-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .conn-input { border: 1px solid var(--line); background: var(--fill); color: var(--ink); border-radius: 9px; padding: 4px 8px; font: inherit; font-size: 12px; width: 175px; }
+  .mini-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 9px; cursor: pointer; }
+  .mini-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .box { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 14px; box-shadow: 0 10px 30px -18px rgba(0,0,0,.25); }
+  textarea { width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); font: inherit; font-size: 17px; min-height: 80px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--ink-2); font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer; transition: all .15s; }
+  .chip:hover { color: var(--ink); background: var(--fill); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .control-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .label { font-size: 12px; color: var(--ink-2); font-weight: 500; margin-right: 2px; }
+  .seg { display: inline-flex; background: var(--fill); border-radius: 12px; padding: 3px; }
+  .seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .dim-readout { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .seed { width: 118px; border: 0; background: var(--fill); color: var(--ink); border-radius: 12px; padding: 8px 10px; font: inherit; font-size: 13.5px; }
+  .go { border: 0; background: var(--ink); color: var(--paper); font: inherit; font-weight: 600; font-size: 14.5px; border-radius: 999px; padding: 9px 22px; cursor: pointer; }
+  .go:disabled { opacity: .4; cursor: default; }
+  .progress-wrap { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
+  .progress-head { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+  .progress-track { height: 6px; background: var(--fill); border-radius: 99px; overflow: hidden; }
+  .progress-bar { height: 100%; width: 0%; background: var(--ink); transition: width .25s ease; }
+  .stage { margin-top: 18px; }
+  .frame { position: relative; border-radius: 20px; overflow: hidden; background: var(--fill); min-height: 200px; }
+  .frame img { display: block; width: 100%; height: auto; }
+  .frame.busy::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.16) 50%, transparent 70%); background-size: 200% 100%; animation: sh 1.4s linear infinite; pointer-events: none; }
+  @keyframes sh { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+  .meta { margin: 10px 2px 0; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; gap: 12px; }
+  .meta a { color: var(--ink); font-weight: 500; }
+  .err { margin-top: 14px; color: #ff453a; font-size: 14.5px; background: rgba(255,69,58,.1); padding: 10px 14px; border-radius: 12px; }
+  h2 { font-size: 16px; margin: 32px 0 12px; letter-spacing: -.01em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 8px; }
+  .grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; display: block; cursor: pointer; background: var(--fill); transition: transform .15s; }
+  .grid img:hover { transform: scale(1.02); }
+  footer { margin-top: 38px; font-size: 12.5px; color: var(--ink-2); line-height: 1.6; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="brand">
+        <img src="./icon.svg" alt="">
+        freeimage <span>local</span>
+        <span class="badge" id="badge">AMD iGPU · Vulkan</span>
+      </div>
+      <div class="state" id="device-name" style="font-size:12.5px;color:var(--ink-2);margin-top:3px;">Acer Aspire Lite 15 · Ryzen 7 5825U · Radeon Vega 8 · 16 GB Unified RAM</div>
+    </div>
+    <div class="telemetry">
+      <div class="header-actions">
+        <button type="button" class="install-btn" id="install-btn" hidden>Install App (PWA)</button>
+        <span id="state">Ready</span>
+      </div>
+      <div class="ram-pill" title="System + Shared iGPU Unified Memory Usage">
+        <span id="ram-text">RAM 8.4 / 15.3 GB</span>
+        <span class="ram-bar"><span class="ram-fill" id="ram-fill" style="width:55%"></span></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="conn-banner" id="conn-banner">
+    <span id="conn-msg"><strong>Engine Connection:</strong> <span id="conn-status-text">Checking local AMD iGPU engine…</span></span>
+    <div class="conn-controls">
+      <input class="conn-input" id="engine-url" value="http://127.0.0.1:7861" title="Local freeimage server URL">
+      <button type="button" class="mini-btn" id="reconnect-btn">Connect Local</button>
+      <button type="button" class="mini-btn" id="sim-btn" aria-pressed="false" title="Simulate AMD iGPU generation in the browser when hosted without local server">Demo Simulator</button>
+    </div>
+  </div>
+
+  <form class="box" id="form" autocomplete="off">
+    <textarea id="prompt" placeholder="A red fox standing in fresh snow at golden hour, detailed fur, soft rim lighting" autofocus></textarea>
+    <div class="chips" id="chips">
+      <button type="button" class="chip" data-p="A red fox standing in fresh snow at golden hour, detailed fur, soft rim light">Fox in snow</button>
+      <button type="button" class="chip" data-p="Cozy Japanese ramen stall at night in the rain, warm lanterns, neon reflections on wet pavement">Ramen shop</button>
+      <button type="button" class="chip" data-p="Studio portrait of an elderly fisherman with weathered skin and wool cap, soft window light, 85mm lens">Portrait</button>
+      <button type="button" class="chip" data-p="Alpine mountain lake at sunrise, pine forest, crisp reflection in still water, cinematic landscape">Mountain lake</button>
+    </div>
+
+    <div class="row">
+      <div class="control-group">
+        <span class="label">Tier</span>
+        <div class="seg" id="tier" role="group" aria-label="Resolution Tier">
+          <button type="button" data-v="512" aria-pressed="false" title="Fastest on AMD Vega 8 iGPU (~20-35s)">512p Draft</button>
+          <button type="button" data-v="768" aria-pressed="true" title="Recommended balance of speed & detail for Ryzen 7 5825U">768p iGPU</button>
+          <button type="button" data-v="1024" aria-pressed="false" title="Maximum 1024p detail (uses VAE tiling)">1024p Max</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="label">Ratio</span>
+        <div class="seg" id="ratio" role="group" aria-label="Aspect Ratio">
+          <button type="button" data-v="1:1" aria-pressed="true">1:1</button>
+          <button type="button" data-v="3:4" aria-pressed="false">3:4</button>
+          <button type="button" data-v="9:16" aria-pressed="false">9:16</button>
+          <button type="button" data-v="16:9" aria-pressed="false">16:9</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="control-group">
+        <span class="label">Steps</span>
+        <div class="seg" id="steps" role="group" aria-label="Quality Steps">
+          <button type="button" data-v="4" aria-pressed="false" title="4 steps — fastest preview">Turbo (4)</button>
+          <button type="button" data-v="6" aria-pressed="true" title="6 steps — recommended sweet spot on AMD iGPU">Fast (6)</button>
+          <button type="button" data-v="8" aria-pressed="false" title="8 steps — maximum skin/fur texture">Best (8)</button>
+        </div>
+        <span class="dim-readout" id="dim-readout">768 × 768</span>
+      </div>
+
+      <div class="control-group">
+        <input class="seed" id="seed" inputmode="numeric" placeholder="Random seed">
+        <button class="go" id="go" type="submit">Generate</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="progress-wrap" id="pwrap" hidden>
+    <div class="progress-head">
+      <span id="pstep">Preparing tensors on iGPU…</span>
+      <span id="ptime">0.0 s</span>
+    </div>
+    <div class="progress-track"><div class="progress-bar" id="pbar"></div></div>
+  </div>
+
+  <section class="stage" id="stage" hidden>
+    <div class="frame" id="frame"><img id="img" alt=""></div>
+    <div class="meta"><span id="info"></span><a id="dl" href="#" download="freeimage.png">Download PNG</a></div>
+  </section>
+  <p class="err" id="err" hidden></p>
+
+  <h2 id="hh" hidden>History</h2>
+  <div class="grid" id="grid"></div>
+
+  <footer>
+    Runs locally on your AMD iGPU via Vulkan (<code>--mmap --offload-to-cpu --flash-attn on --vae-tiling</code>).
+    Installable as a desktop PWA. Images are saved to <code>outputs/</code>. · <a href="https://github.com/Apokrit1/freeimage-local-amd-igpu" target="_blank" rel="noopener">GitHub Repo</a>
+  </footer>
+</main>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+
+  const isLocalOrigin = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  let apiBase = localStorage.getItem("fi_api_base") || (isLocalOrigin ? "" : "http://127.0.0.1:7861");
+  let simMode = false;
+  let localConnected = false;
+  const demoHistory = JSON.parse(localStorage.getItem("fi_demo_history") || "[]");
+
+  $("#engine-url").value = apiBase || location.origin;
+
+  // Register Service Worker for PWA installability & offline app shell
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    });
+  }
+
+  // Handle PWA install prompt (Chrome / Edge desktop & mobile)
+  let deferredPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    $("#install-btn").hidden = false;
+  });
+
+  $("#install-btn").addEventListener("click", async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    $("#install-btn").hidden = true;
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredPrompt = null;
+    $("#install-btn").hidden = true;
+  });
+
+  // Resolution matrix (all multiples of 64) for 512p Draft, 768p iGPU Balanced, and 1024p Full
+  const SIZES = {
+    "512":  { "1:1": [512, 512],   "3:4": [512, 640],   "9:16": [512, 896],   "16:9": [896, 512] },
+    "768":  { "1:1": [768, 768],   "3:4": [640, 832],   "9:16": [576, 1024],  "16:9": [1024, 576] },
+    "1024": { "1:1": [1024, 1024], "3:4": [896, 1152],  "9:16": [768, 1344],  "16:9": [1344, 768] }
+  };
+
+  const val = (el) => el.querySelector('[aria-pressed="true"]').dataset.v;
+  const getDims = () => SIZES[val($("#tier"))][val($("#ratio"))];
+
+  const updateDimReadout = () => {
+    const [w, h] = getDims();
+    $("#dim-readout").textContent = `${w} × ${h}`;
+  };
+
+  const pick = (el) => el.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    el.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    updateDimReadout();
+  });
+  pick($("#tier")); pick($("#ratio")); pick($("#steps"));
+
+  $("#chips").addEventListener("click", (e) => {
+    const c = e.target.closest(".chip"); if (!c) return;
+    $("#prompt").value = c.dataset.p;
+    $("#prompt").focus();
+  });
+
+  const updateRamUI = (ram) => {
+    if (!ram || !ram.total_gb) return;
+    $("#ram-text").textContent = `RAM ${ram.used_gb} / ${ram.total_gb} GB`;
+    $("#ram-fill").style.width = `${Math.min(100, Math.max(5, ram.percent || 0))}%`;
+  };
+
+  const setSimMode = (on) => {
+    simMode = on;
+    $("#sim-btn").setAttribute("aria-pressed", on ? "true" : "false");
+    if (on) {
+      $("#badge").textContent = "Hosted Demo Simulator";
+      $("#state").textContent = "Simulator Ready";
+      $("#conn-status-text").textContent = "Hosted Demo Simulator active (start start-app.bat to use local AMD iGPU)";
+    }
+  };
+
+  $("#sim-btn").addEventListener("click", () => {
+    setSimMode(!simMode);
+    if (!simMode) loadStatus();
+  });
+
+  $("#reconnect-btn").addEventListener("click", () => {
+    const raw = $("#engine-url").value.trim().replace(/\/+$/, "");
+    apiBase = (raw === location.origin) ? "" : raw;
+    localStorage.setItem("fi_api_base", apiBase);
+    setSimMode(false);
+    loadStatus();
+    history();
+  });
+
+  const resolveUrl = (u) => {
+    if (!u) return "";
+    if (u.startsWith("data:") || u.startsWith("http://") || u.startsWith("https://")) return u;
+    return `${apiBase}${u}`;
+  };
+
+  const loadStatus = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/status`);
+      const s = await res.json();
+      if (s.offline) throw new Error("Offline");
+      localConnected = true;
+      setSimMode(false);
+      $("#conn-status-text").textContent = `Connected to local AMD iGPU server (${apiBase || location.origin})`;
+      if (isLocalOrigin) $("#conn-banner").hidden = true;
+      $("#state").textContent = "Ready";
+      if (s.device) $("#device-name").textContent = `${s.device} · ${s.llm_name || "int8"}`;
+      if (s.platform) $("#badge").textContent = s.is_igpu ? `AMD iGPU · ${s.platform.toUpperCase()}` : s.platform.toUpperCase();
+      updateRamUI(s.ram);
+    } catch {
+      localConnected = false;
+      $("#conn-banner").hidden = false;
+      if (!simMode) {
+        setSimMode(true);
+      }
+    }
+  };
+
+  const show = (r) => {
+    $("#stage").hidden = false;
+    const fullUrl = resolveUrl(r.url);
+    $("#img").src = fullUrl; $("#img").alt = r.prompt || "";
+    $("#dl").href = fullUrl.startsWith("data:") ? fullUrl : (fullUrl + "?dl=1");
+    $("#dl").download = r.name || `freeimage-${r.seed || Date.now()}.png`;
+    $("#info").textContent = [`${r.width} × ${r.height}`, r.seconds ? `${r.seconds} s` : "", `seed ${r.seed}`].filter(Boolean).join("  ·  ");
+  };
+
+  const renderHistoryItems = (items) => {
+    const all = [...items, ...demoHistory].slice(0, 60);
+    $("#hh").hidden = !all.length;
+    $("#grid").replaceChildren(...all.map((it) => {
+      const i = new Image();
+      i.src = resolveUrl(it.url);
+      i.loading = "lazy";
+      i.alt = it.prompt || "";
+      i.title = it.prompt || "";
+      i.onclick = () => { show(it); $("#prompt").value = it.prompt || ""; scrollTo({ top: 0, behavior: "smooth" }); };
+      return i;
+    }));
+  };
+
+  const history = async () => {
+    if (!localConnected) {
+      renderHistoryItems([]);
+      return;
+    }
+    try {
+      const items = await (await fetch(`${apiBase}/api/history`)).json();
+      renderHistoryItems(Array.isArray(items) ? items : []);
+    } catch {
+      renderHistoryItems([]);
+    }
+  };
+
+  // Procedural Canvas renderer for Hosted Demo Simulator mode (progressive denoising steps + final crisp render)
+  const renderSimulatedImage = (prompt, w, h, seed, step, totalSteps) => {
+    const c = document.createElement("canvas");
+    const scale = step < totalSteps ? 0.35 : 0.75;
+    c.width = Math.round(w * scale);
+    c.height = Math.round(h * scale);
+    const ctx = c.getContext("2d");
+
+    // Deterministic PRNG from seed & prompt
+    let hval = Number(seed) || 42;
+    for (let i = 0; i < prompt.length; i++) hval = (hval * 31 + prompt.charCodeAt(i)) >>> 0;
+    const rand = () => { hval = (hval * 1664525 + 1013904223) >>> 0; return hval / 4294967296; };
+
+    const pLow = prompt.toLowerCase();
+    let pal = ["#1a2a4a", "#e88d52", "#f6d7b0", "#263859"];
+    if (pLow.includes("ramen") || pLow.includes("neon") || pLow.includes("night")) {
+      pal = ["#0c0e1c", "#ff2a6d", "#05d9e8", "#1b1f3b"];
+    } else if (pLow.includes("lake") || pLow.includes("mountain") || pLow.includes("forest")) {
+      pal = ["#0f2027", "#203a43", "#2c5364", "#f4a261"];
+    } else if (pLow.includes("portrait") || pLow.includes("fisherman")) {
+      pal = ["#1f1c18", "#8e7968", "#d4c3b3", "#3a332c"];
+    }
+
+    const grad = ctx.createLinearGradient(0, 0, 0, c.height);
+    grad.addColorStop(0, pal[0]);
+    grad.addColorStop(0.55, pal[1]);
+    grad.addColorStop(1, pal[3]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, c.width, c.height);
+
+    // Sun / glow
+    const sx = c.width * (0.28 + rand() * 0.44);
+    const sy = c.height * (0.24 + rand() * 0.25);
+    const sr = Math.min(c.width, c.height) * 0.26;
+    const rgrad = ctx.createRadialGradient(sx, sy, sr * 0.05, sx, sy, sr * 1.4);
+    rgrad.addColorStop(0, pal[2]);
+    rgrad.addColorStop(0.5, pal[1] + "aa");
+    rgrad.addColorStop(1, "transparent");
+    ctx.fillStyle = rgrad;
+    ctx.fillRect(0, 0, c.width, c.height);
+
+    // Silhouettes / hills
+    for (let layer = 0; layer < 3; layer++) {
+      ctx.beginPath();
+      const baseH = c.height * (0.52 + layer * 0.14);
+      ctx.moveTo(0, c.height);
+      for (let x = 0; x <= c.width; x += c.width / 8) {
+        const y = baseH + Math.sin(x * 0.015 + layer * 2.1 + rand() * 0.6) * (c.height * 0.07);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(c.width, c.height);
+      ctx.closePath();
+      ctx.fillStyle = layer === 2 ? "#0b0b0ee6" : (layer === 1 ? pal[3] + "cc" : pal[0] + "99");
+      ctx.fill();
+    }
+
+    // Add latent diffusion noise proportional to remaining steps
+    const noiseLevel = Math.max(0, 1 - step / totalSteps);
+    if (noiseLevel > 0.02) {
+      const imgData = ctx.getImageData(0, 0, c.width, c.height);
+      const d = imgData.data;
+      const amp = noiseLevel * 120;
+      for (let i = 0; i < d.length; i += 4) {
+        const n = (Math.random() - 0.5) * amp;
+        d[i] = Math.min(255, Math.max(0, d[i] + n));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + n));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + n));
+      }
+      ctx.putImageData(imgData, 0, 0);
+    } else {
+      // Watermark badge on final demo render
+      ctx.fillStyle = "rgba(0,0,0,0.52)";
+      ctx.fillRect(14, c.height - 46, Math.min(c.width - 28, 390), 32);
+      ctx.fillStyle = "#f5f5f7";
+      ctx.font = "600 13px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+      ctx.fillText(`AMD iGPU Demo Preview · ${w}×${h} · seed ${seed}`, 24, c.height - 25);
+    }
+    return c.toDataURL("image/png");
+  };
+
+  const runSimulatedGenerate = async (prompt, width, height, steps, seedInput) => {
+    const seed = /^\d+$/.test(seedInput) ? Number(seedInput) : Math.floor(Math.random() * 2147483647);
+    const t0 = performance.now();
+    for (let s = 1; s <= steps; s++) {
+      await new Promise((r) => setTimeout(r, 420));
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+      const pct = Math.round((s / steps) * 100);
+      $("#ptime").textContent = `${elapsed} s`;
+      $("#state").textContent = `Simulating… ${elapsed} s`;
+      $("#pbar").style.width = `${pct}%`;
+      $("#pstep").textContent = s === steps
+        ? `Decoding VAE (tiled ${width}×${height})…`
+        : `Simulated AMD iGPU · Step ${s} / ${steps} (${pct}%)`;
+      $("#img").src = renderSimulatedImage(prompt, width, height, seed, s - 0.2, steps);
+      updateRamUI({ total_gb: 15.3, used_gb: +(8.4 + (s / steps) * 2.1).toFixed(1), percent: Math.round(55 + (s / steps) * 14) });
+    }
+    const finalUrl = renderSimulatedImage(prompt, width, height, seed, steps, steps);
+    const secs = +((performance.now() - t0) / 1000).toFixed(1);
+    const item = {
+      url: finalUrl,
+      name: `demo-${seed}.png`,
+      seed,
+      seconds: secs,
+      width,
+      height,
+      prompt
+    };
+    demoHistory.unshift(item);
+    if (demoHistory.length > 12) demoHistory.length = 12;
+    try { localStorage.setItem("fi_demo_history", JSON.stringify(demoHistory)); } catch {}
+    return item;
+  };
+
+  $("#form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const prompt = $("#prompt").value.trim(); if (!prompt) return $("#prompt").focus();
+    const [width, height] = getDims();
+    const steps = +val($("#steps"));
+    const seedInput = $("#seed").value.trim();
+
+    $("#go").disabled = true; $("#err").hidden = true;
+    $("#pwrap").hidden = false; $("#pbar").style.width = "4%";
+    $("#pstep").textContent = `Encoding prompt (Qwen3-4B)…`;
+    $("#stage").hidden = false; $("#frame").classList.add("busy");
+    $("#img").style.aspectRatio = `${width} / ${height}`;
+
+    if (simMode || !localConnected) {
+      try {
+        const d = await runSimulatedGenerate(prompt, width, height, steps, seedInput);
+        show(d); history();
+      } catch (err) {
+        $("#err").textContent = err.message; $("#err").hidden = false;
+      } finally {
+        $("#state").textContent = simMode ? "Simulator Ready" : "Ready";
+        $("#pwrap").hidden = true;
+        $("#frame").classList.remove("busy");
+        $("#go").disabled = false;
+      }
+      return;
+    }
+
+    const t0 = performance.now();
+    const tick = setInterval(async () => {
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+      $("#ptime").textContent = `${elapsed} s`;
+      $("#state").textContent = `Generating… ${elapsed} s`;
+      try {
+        const p = await (await fetch(`${apiBase}/api/progress`)).json();
+        updateRamUI(p.ram);
+        if (p.total_steps > 0) {
+          const pct = Math.min(99, Math.round((p.step / p.total_steps) * 100));
+          $("#pbar").style.width = `${Math.max(8, pct)}%`;
+          $("#pstep").textContent = p.step >= p.total_steps
+            ? `Decoding VAE (tiled ${width}×${height})…`
+            : `Sampling on AMD iGPU · Step ${p.step} / ${p.total_steps} (${pct}%)`;
+        }
+        if (p.preview) {
+          $("#img").src = p.preview;
+        }
+      } catch {}
+    }, 600);
+
+    try {
+      const r = await fetch(`${apiBase}/api/generate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt, width, height, steps, seed: seedInput })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Something went wrong");
+      $("#pbar").style.width = "100%";
+      show(d); history(); loadStatus();
+    } catch (err) {
+      $("#err").textContent = err.message; $("#err").hidden = false;
+    } finally {
+      clearInterval(tick);
+      $("#state").textContent = "Ready";
+      $("#pwrap").hidden = true;
+      $("#frame").classList.remove("busy");
+      $("#go").disabled = false;
+    }
+  });
+
+  $("#prompt").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#form").requestSubmit();
+  });
+
+  updateDimReadout();
+  loadStatus().then(() => history());
+  setInterval(() => { if (!simMode) loadStatus(); }, 10000);
+})();
+</script>
+</body>
+</html>
