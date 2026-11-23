@@ -44,30 +44,42 @@ function Test-EngineReady {
     }
 }
 
-function Start-EngineServer([PSCustomObject]$hw) {
-    if (Test-EngineReady) {
-        Write-Info "Engine already running on port $SD_PORT"
-        return $null
+function Format-QuotedArgs([string[]]$rawArgs) {
+    $quoted = @()
+    foreach ($a in $rawArgs) {
+        if ($a -match '\s') {
+            $quoted += "`"$a`""
+        } else {
+            $quoted += $a
+        }
     }
+    return $quoted
+}
 
-    $sdServer = Join-Path $script:FI_HOME "bin\sd-server.exe"
-    $engineArgs = Get-EngineArgs $hw
+function Start-EngineServerAttempt([PSCustomObject]$hw, [string]$mode) {
+    $binDir   = Join-Path $script:FI_HOME "bin"
+    $sdServer = Join-Path $binDir "sd-server.exe"
+    $engineArgs = Get-EngineArgs -hw $hw -mode $mode
     $defaultSteps = if ($hw.IsIGPU) { "6" } else { "8" }
-    $allArgs = @("--listen-ip", "127.0.0.1", "--listen-port", "$SD_PORT") + $engineArgs + @("--steps", $defaultSteps)
+    $rawArgs = @("--listen-ip", "127.0.0.1", "--listen-port", "$SD_PORT") + $engineArgs + @("--steps", $defaultSteps)
+    $allArgs = Format-QuotedArgs $rawArgs
 
     $logFile = Join-Path $script:FI_HOME "server.log"
     $errFile = Join-Path $script:FI_HOME "server.err.log"
-    Write-Info "Loading Z-Image Turbo into memory (first start takes 15-40s on AMD iGPU)..."
 
-    $proc = Start-Process -FilePath $sdServer -ArgumentList $allArgs -NoNewWindow -PassThru `
-        -RedirectStandardOutput $logFile -RedirectStandardError $errFile
+    $proc = Start-Process -FilePath $sdServer -ArgumentList $allArgs -WorkingDirectory $binDir `
+        -NoNewWindow -PassThru -RedirectStandardOutput $logFile -RedirectStandardError $errFile
 
     $attempts = 0
     while (-not (Test-EngineReady)) {
         if ($proc.HasExited) {
-            if (Test-Path $errFile) { Get-Content $errFile -Tail 20 | ForEach-Object { Write-Host "  $_" -ForegroundColor Red } }
-            if (Test-Path $logFile) { Get-Content $logFile -Tail 20 | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow } }
-            Stop-WithError "Engine stopped unexpectedly. See $logFile and $errFile"
+            return [PSCustomObject]@{
+                Success  = $false
+                Process  = $proc
+                ExitCode = $proc.ExitCode
+                LogFile  = $logFile
+                ErrFile  = $errFile
+            }
         }
         $attempts++
         if ($attempts -gt 600) {
@@ -76,7 +88,61 @@ function Start-EngineServer([PSCustomObject]$hw) {
         }
         Start-Sleep -Milliseconds 500
     }
-    return $proc
+
+    return [PSCustomObject]@{
+        Success  = $true
+        Process  = $proc
+        ExitCode = 0
+        LogFile  = $logFile
+        ErrFile  = $errFile
+    }
+}
+
+function Show-LogTail([string]$logFile, [string]$errFile) {
+    if (Test-Path $errFile) {
+        $errLines = @(Get-Content $errFile -Tail 15 -ErrorAction SilentlyContinue)
+        foreach ($l in $errLines) {
+            if ("$l".Trim()) { Write-Host "    $l" -ForegroundColor Red }
+        }
+    }
+    if (Test-Path $logFile) {
+        $logLines = @(Get-Content $logFile -Tail 15 -ErrorAction SilentlyContinue)
+        foreach ($l in $logLines) {
+            if ("$l".Trim()) { Write-Host "    $l" -ForegroundColor Yellow }
+        }
+    }
+}
+
+function Start-EngineServer([PSCustomObject]$hw) {
+    if (Test-EngineReady) {
+        Write-Info "Engine already running on port $SD_PORT"
+        return $null
+    }
+
+    Write-Info "Loading Z-Image Turbo into memory (first start takes 15-45s)..."
+
+    $modes = @("default")
+    if (-not $hw.IsIntel) { $modes += "no-flash" }
+    $modes += "cpu"
+
+    foreach ($m in $modes) {
+        if ($m -eq "no-flash") {
+            Write-Warn "Retrying Vulkan engine with --flash-attn off for driver compatibility..."
+        } elseif ($m -eq "cpu" -and $modes.Count -gt 1) {
+            Write-Warn "Vulkan initialization failed on $($hw.GPUName) - automatically falling back to CPU AVX2 mode (--backend cpu)..."
+            $hw.Platform = "cpu"
+        }
+
+        $res = Start-EngineServerAttempt -hw $hw -mode $m
+        if ($res.Success) {
+            return $res.Process
+        }
+
+        Write-Warn "sd-server exited during '$m' startup with code $(Format-ExitCode $res.ExitCode)"
+        Show-LogTail -logFile $res.LogFile -errFile $res.ErrFile
+    }
+
+    Stop-WithError "Engine failed to start in both Vulkan and CPU modes. Run '.\fi.bat doctor' to inspect your setup."
 }
 
 function Open-AppWindow([string]$url) {
@@ -102,9 +168,9 @@ function Invoke-Serve([PSCustomObject]$hw, [bool]$openBrowser = $false) {
     }
 
     $sdProc = Start-EngineServer $hw
-    Write-Ok "Engine ready: $($hw.DeviceSummary)"
+    Write-Ok "Engine ready: $($hw.DeviceSummary) [$($hw.Platform.ToUpper())]"
     $uiUrl = "http://localhost:$UI_PORT"
-    Write-Ok "Web UI ready: $uiUrl"
+    Write-Ok "Web UI (PWA) ready: $uiUrl"
     Write-Info "Keep this window open while using the app. Press Ctrl+C to stop."
 
     $env:FI_SD_URL   = "http://127.0.0.1:$SD_PORT"
@@ -185,7 +251,8 @@ function Invoke-Generate([PSCustomObject]$hw, [string[]]$cliArgs) {
     }
 
     Write-Info "$($hw.GPUName) | ${w}x${h} | $steps steps"
-    $sdCli = Join-Path $script:FI_HOME "bin\sd-cli.exe"
+    $binDir = Join-Path $script:FI_HOME "bin"
+    $sdCli  = Join-Path $binDir "sd-cli.exe"
     $engineArgs = Get-EngineArgs $hw
     $lastLog = Join-Path $script:FI_HOME "last.log"
 
@@ -195,15 +262,17 @@ function Invoke-Generate([PSCustomObject]$hw, [string[]]$cliArgs) {
     $oldEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
+        Push-Location $binDir
         & $sdCli @allArgs *> $lastLog
         $exitCode = $LASTEXITCODE
     } finally {
+        Pop-Location -ErrorAction SilentlyContinue
         $ErrorActionPreference = $oldEAP
     }
 
     if ($exitCode -ne 0) {
         if (Test-Path $lastLog) { Get-Content $lastLog -Tail 25 | ForEach-Object { Write-Host "  $_" -ForegroundColor Red } }
-        Stop-WithError "Generation failed. Full log: $lastLog"
+        Stop-WithError "Generation failed (exit code $(Format-ExitCode $exitCode)). Full log: $lastLog"
     }
     $sw.Stop()
     $secs = [math]::Round($sw.Elapsed.TotalSeconds, 1)
@@ -248,14 +317,15 @@ function Invoke-Bench([PSCustomObject]$hw) {
 }
 
 function Invoke-Doctor([PSCustomObject]$hw) {
-    $sdCli = Join-Path $script:FI_HOME "bin\sd-cli.exe"
-    $diff  = Join-Path $script:FI_HOME "models\z_image_turbo_int8_convrot.safetensors"
-    $llm   = Get-LlmModelPath $hw
-    $vae   = Join-Path $script:FI_HOME "models\ae.safetensors"
+    $binDir = Join-Path $script:FI_HOME "bin"
+    $sdCli  = Join-Path $binDir "sd-cli.exe"
+    $diff   = Join-Path $script:FI_HOME "models\z_image_turbo_int8_convrot.safetensors"
+    $llm    = Get-LlmModelPath $hw
+    $vae    = Join-Path $script:FI_HOME "models\ae.safetensors"
     $engineArgs = Get-EngineArgs $hw
 
-    $gpuMode = if ($hw.IsIGPU) { "Integrated APU | Unified RAM" } else { "$($hw.VRAMMB) MB VRAM" }
-    $engStatus = if (Test-Path $sdCli) { "installed (Vulkan x64)" } else { "not installed (run .\install.bat)" }
+    $gpuMode = if ($hw.IsIGPU) { "Integrated GPU | Unified RAM" } else { "$($hw.VRAMMB) MB VRAM" }
+    $engStatus = if (Test-Path $sdCli) { "installed ($($hw.Platform) x64)" } else { "not installed (run .\install.bat)" }
     $pyPath = Find-PythonExe
     $pyStatus = if ($pyPath) { $pyPath } else { "not installed (run .\install.bat --build)" }
     $llmLeaf = Split-Path $llm -Leaf
@@ -272,15 +342,21 @@ function Invoke-Doctor([PSCustomObject]$hw) {
     Write-Host "flags    : $($engineArgs -join ' ')"
 
     if (Test-Path $sdCli) {
+        Ensure-EngineRuntime
         Write-Host ""
         Write-Host "compute devices reported by sd-cli:" -ForegroundColor Cyan
         $oldEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         try {
+            Push-Location $binDir
             & $sdCli --list-devices
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  sd-cli exited with code $(Format-ExitCode $LASTEXITCODE)" -ForegroundColor Red
+            }
         } catch {
             Write-Host "  (unable to query devices)"
         } finally {
+            Pop-Location -ErrorAction SilentlyContinue
             $ErrorActionPreference = $oldEAP
         }
     }

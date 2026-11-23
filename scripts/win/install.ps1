@@ -2,7 +2,7 @@
 # Pure 7-bit ASCII for universal Windows PowerShell 5.1 codepage compatibility.
 #
 #   .\install.bat              install Vulkan engine + portable Python + 16 GB optimized models (~9.0 GB)
-#   .\install.bat --build      only download / verify the prebuilt Vulkan engine & portable Python
+#   .\install.bat --build      only download / verify the prebuilt Vulkan engine and portable Python
 #   .\install.bat --models     only download / verify the models
 #   .\install.bat --q8         use the larger 4.3 GB Qwen3-4B-Q8_0 text encoder instead of 2.5 GB Q4_K_M
 
@@ -66,8 +66,14 @@ function Install-Engine([PSCustomObject]$hw, [bool]$useCpu = $false) {
     Write-Info "CPU      : $($hw.CPUName) ($($hw.PhysicalCores) cores / $($hw.LogicalCores) threads)"
     Write-Info "iGPU/GPU : $($hw.GPUName)"
     Write-Info "Memory   : $($hw.RAMGB) GB total system RAM"
-    if ($hw.IsIGPU) {
-        Write-Info "Profile  : AMD iGPU Unified Memory Mode (Vulkan + mmap + CPU offload + 3 GiB VRAM budget + VAE tiling)"
+    if ($hw.IsAMD -and $hw.IsIGPU) {
+        Write-Info "Profile  : AMD Ryzen iGPU Unified Memory Mode (Vulkan + mmap + CPU offload + 3 GiB VRAM budget + VAE tiling)"
+    } elseif ($hw.IsIntel -and $hw.IsIGPU) {
+        Write-Info "Profile  : Intel iGPU Unified Memory Mode (Vulkan/CPU + mmap + CPU offload + VAE tiling)"
+    } elseif ($hw.IsIGPU) {
+        Write-Info "Profile  : Integrated GPU Unified Memory Mode (Vulkan + mmap + CPU offload + VAE tiling)"
+    } else {
+        Write-Info "Profile  : Discrete GPU Mode ($($hw.VRAMMB) MB VRAM)"
     }
 
     $binDir = Join-Path $script:FI_HOME "bin"
@@ -95,6 +101,10 @@ function Install-Engine([PSCustomObject]$hw, [bool]$useCpu = $false) {
 
     $platformName = if ($useCpu) { "cpu" } else { "vulkan" }
     Set-Content -Path (Join-Path $script:FI_HOME "platform") -Value $platformName -Encoding ASCII
+
+    # Verify and self-repair Visual C++ Runtime DLLs (vcomp140.dll, msvcp140.dll 14.40+, etc.) & Vulkan device init
+    Ensure-EngineRuntime
+
     Write-Ok "Engine ready: $binDir\sd-server.exe"
 
     $sdCli = Join-Path $binDir "sd-cli.exe"
@@ -102,6 +112,7 @@ function Install-Engine([PSCustomObject]$hw, [bool]$useCpu = $false) {
         $oldEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         try {
+            Push-Location $binDir
             $devs = & $sdCli --list-devices 2>&1
             if ($devs) {
                 Write-Info "Detected compute backends:"
@@ -110,6 +121,7 @@ function Install-Engine([PSCustomObject]$hw, [bool]$useCpu = $false) {
                 }
             }
         } catch {} finally {
+            Pop-Location -ErrorAction SilentlyContinue
             $ErrorActionPreference = $oldEAP
         }
     }
