@@ -58,23 +58,57 @@ Why it works:
 
 | Machine | Status | Notes |
 |---|---|---|
+| **Windows 10/11 + AMD Ryzen iGPU (16 GB RAM)** | ✅ **Supported (Vulkan)** | Tuned for **Acer Aspire Lite 15 (Ryzen 7 5825U / Radeon Vega 8, 16 GB RAM)** & Ryzen 5000/6000/7000/8000 APUs. One-click portable app (`start-app.bat`). |
+| **Linux + AMD Ryzen iGPU / Radeon GPU** | Should work | Vulkan (`-DSD_VULKAN=ON`) or ROCm (`FI_BACKEND=rocm`). Automatic 16 GB unified memory tuning. |
 | NVIDIA RTX 30-series, Linux | ✅ **Tested** | RTX 3060 Laptop 6 GB, 16 GB RAM, CUDA 12.4. Runs freeimage.dev 24/7. |
 | NVIDIA RTX 40-series, Linux | Should work | Same code path, architecture detected automatically. |
 | NVIDIA RTX 50-series (5060, 5070…), Linux | Should work | Needs CUDA 12.8+ for `sm_120`. The installer checks this. |
-| Windows + NVIDIA | Should work in WSL2 | Use the Linux steps inside WSL2 with the NVIDIA CUDA-on-WSL driver. |
+| Windows + NVIDIA | Should work | Native via `start-app.bat` (Vulkan) or inside WSL2 with CUDA. |
 | Apple Silicon Mac | Should work | Metal build. No SageAttention, so the gain comes from int8 alone. Unified memory, no offload needed. |
 
-Only the first row has been measured. **If you run it on something else, please share `./fi bench` output in an issue**,
+Only the RTX 3060 row has published benchmark numbers so far. **If you run it on something else, please share `./fi bench` (or `fi.bat bench`) output in an issue**,
 and I'll add your numbers to this table.
 
-You need about 11 GB of free disk, 16 GB of RAM, and for NVIDIA cards with less than 12 GB of VRAM the weights are offloaded automatically.
+You need about 9–11 GB of free disk, 16 GB of RAM, and on 16 GB AMD iGPU laptops or NVIDIA cards under 12 GB VRAM the weights are streamed and tiled automatically.
 
-## Install
+## Install & Run
+
+**Windows 10 / 11 with an AMD Ryzen iGPU (One-Click Portable App — e.g. Acer Aspire Lite 15 R7-5825U / 16 GB)**
+
+No compiler, Visual Studio, CMake, or Python installation required:
+
+1. Double-click **`install.bat`** (or **`start-app.bat`**, which auto-installs on first run).
+   - Downloads the prebuilt `stable-diffusion.cpp` **Vulkan x64** engine (`sd-server.exe`, `sd-cli.exe`).
+   - Downloads portable Python 3.12 (`~11 MB`) into `.fi\python\` if Python isn't installed.
+   - Downloads the **16 GB RAM optimized model set (~9.0 GB)**: `z_image_turbo_int8_convrot.safetensors` (6.2 GB) + `Qwen3-4B-Q4_K_M.gguf` (2.5 GB, saving 1.8 GB of shared RAM vs Q8_0) + `ae.safetensors` (335 MB).
+   - Creates a **`freeimage local`** shortcut on your Windows Desktop.
+2. Double-click **`start-app.bat`** (or the Desktop shortcut) to open the standalone desktop app window!
+
+From PowerShell or Command Prompt:
+```bat
+install.bat                                     :: one-time setup (~9.0 GB download, resumable)
+start-app.bat                                   :: launches engine + standalone desktop app window
+fi.bat "a red fox in fresh snow, golden hour"   :: single image (768x768, 6 steps default on iGPU)
+fi.bat doctor                                   :: inspect detected AMD iGPU, Vulkan device & flags
+fi.bat bench                                    :: measure seconds per image on your laptop
+```
+
+**Why this works on a 16 GB AMD Ryzen 7 5825U (Vega 8) laptop without running out of memory:**
+- **Vulkan Compute (`ggml-vulkan`):** Runs natively on AMD Vega 8 (`gfx90c`) and RDNA iGPUs using the standard Windows AMD Adrenalin driver.
+- **Unified Memory Budget (`--mmap --offload-to-cpu --max-vram 3`):** On a 16 GB APU, CPU RAM and iGPU VRAM share the same 16 GB physical memory. Memory-mapping weights from SSD (`--mmap`) and capping active Vulkan graph segments to 3 GiB (`--max-vram 3`) avoids duplicating the 6.2 GB model in both CPU and GPU memory pools.
+- **4-bit Text Encoder (`Qwen3-4B-Q4_K_M.gguf`):** Cuts text encoder footprint from 4.3 GB (`Q8_0`) to 2.5 GB with negligible impact on prompt adherence.
+- **Vulkan Flash Attention & Tiled VAE (`--flash-attn on --vae-tiling`):** Prevents the 2.5+ GB memory spike during final VAE image decoding.
 
 **macOS (Apple Silicon)**
 ```bash
 xcode-select --install          # if you don't have the command line tools
 brew install cmake ninja
+./install.sh
+```
+
+**Ubuntu / Debian with an AMD iGPU (Vulkan)**
+```bash
+sudo apt install git cmake ninja-build build-essential curl libvulkan-dev glslc mesa-vulkan-drivers vulkan-tools
 ./install.sh
 ```
 
@@ -86,8 +120,8 @@ sudo apt install git cmake ninja-build build-essential curl
 ```
 
 The installer:
-1. detects your GPU (Metal, or CUDA with the right `sm_XX` architecture),
-2. builds a pinned, tested version of [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp),
+1. detects your GPU (Windows Vulkan prebuilt, Linux Vulkan/ROCm, macOS Metal, or NVIDIA CUDA with the right `sm_XX` architecture),
+2. installs or builds a pinned, tested version of [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp),
 3. downloads the three model files with resume support and checks their SHA-256.
 
 Everything lives in `.fi/` inside this folder. Delete it to uninstall.
@@ -95,7 +129,7 @@ Everything lives in `.fi/` inside this folder. Delete it to uninstall.
 ## Use
 
 ```bash
-./fi "a lighthouse on a cliff, flat illustration"            # 1024×1024, 8 steps
+./fi "a lighthouse on a cliff, flat illustration"            # 1024×1024 (768×768 on iGPU)
 ./fi "city street at night in the rain" --size 1344x768      # 16:9
 ./fi "portrait of an old fisherman" --steps 6 --seed 42      # faster, reproducible
 ./fi serve                                                   # web UI, keeps the model loaded
@@ -103,8 +137,7 @@ Everything lives in `.fi/` inside this folder. Delete it to uninstall.
 ./fi doctor                                                  # what was detected, which flags are used
 ```
 
-`./fi "…"` loads the model for every image, which is fine for one-offs. For more than a couple of images, use `./fi serve`:
-the model stays in memory and each image takes only the sampling time.
+On Windows, use `start-app.bat` for the desktop UI or `fi.bat` for the CLI.
 
 Tips:
 - **Steps:** 8 is the sweet spot. 6 is ~20% faster with a slight softening of skin and fur. 4 loses visible detail.

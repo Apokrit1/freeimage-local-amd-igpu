@@ -40,7 +40,9 @@ start_engine() {
 }
 
 cmd_generate() {
+  detect_platform
   local prompt="" size=1024x1024 steps=8 seed=-1 out=""
+  if [ "${FI_IS_IGPU:-0}" = 1 ]; then size=768x768; steps=6; fi
   while [ $# -gt 0 ]; do
     case "$1" in
       --size) size="$2"; shift 2 ;;
@@ -69,7 +71,11 @@ cmd_serve() {
   start_engine
   ok "engine ready ($FI_DEVICE)"
   ok "open http://localhost:$UI_PORT"
-  FI_SD_URL="http://127.0.0.1:$SD_PORT" FI_OUT="$ROOT/outputs" python3 "$ROOT/ui/serve.py" --port "$UI_PORT"
+  local llm_base; llm_base="$(basename "$(llm_model_file)")"
+  FI_SD_URL="http://127.0.0.1:$SD_PORT" FI_OUT="$ROOT/outputs" \
+    FI_DEVICE="$FI_DEVICE" FI_PLATFORM="$FI_PLATFORM" FI_IS_IGPU="$FI_IS_IGPU" \
+    FI_RAM_GB="$FI_RAM_GB" FI_LLM_NAME="$llm_base" \
+    python3 "$ROOT/ui/serve.py" --port "$UI_PORT"
 }
 
 cmd_bench() {
@@ -80,12 +86,14 @@ cmd_bench() {
     "a cozy ramen shop at night in the rain, neon reflections"
     "studio portrait of an elderly fisherman, soft window light"
   )
-  step "Benchmark: 1024×1024, 8 steps ($FI_DEVICE)"
+  local bw=1024 bh=1024 bsteps=8
+  if [ "${FI_IS_IGPU:-0}" = 1 ]; then bw=768; bh=768; bsteps=6; fi
+  step "Benchmark: ${bw}×${bh}, $bsteps steps ($FI_DEVICE)"
   info "warm-up…"
   post_txt2img "warm up" 512 512 4 >/dev/null
   local total=0 p t
   for p in "${prompts[@]}"; do
-    t="$(post_txt2img "$p" 1024 1024 8)"
+    t="$(post_txt2img "$p" "$bw" "$bh" "$bsteps")"
     printf '  %6.1f s  %s\n' "$t" "$p"
     total="$(awk -v a="$total" -v b="$t" 'BEGIN { print a + b }')"
   done
@@ -104,9 +112,10 @@ cmd_doctor() {
   echo "platform : $FI_PLATFORM"
   echo "device   : $FI_DEVICE"
   [ "$FI_PLATFORM" = cuda ] && echo "arch     : sm_$FI_CUDA_ARCH"
+  echo "memory   : ${FI_RAM_GB} GB system RAM"
   echo "home     : $FI_HOME"
   echo "engine   : $([ -x "$FI_HOME/bin/sd-cli" ] && echo built || echo 'not built (./install.sh)')"
-  echo "models   : $([ -f "$FI_HOME/models/z_image_turbo_int8_convrot.safetensors" ] && echo present || echo 'missing (./install.sh --models)')"
+  echo "models   : $([ -f "$FI_HOME/models/z_image_turbo_int8_convrot.safetensors" ] && echo "present ($(basename "$(llm_model_file)"))" || echo 'missing (./install.sh --models)')"
   echo "flags    : ${FI_ARGS[*]##*/}"
 }
 

@@ -16,11 +16,10 @@ SDCPP_REPO="https://github.com/leejet/stable-diffusion.cpp.git"
 SDCPP_REF="${SDCPP_REF:-532d2c15c430a785a712b2d94281f04e733008a4}"
 
 # name | url | sha256 | bytes
-MODELS=(
-  "diffusion|https://huggingface.co/Comfy-Org/Z-Image-Turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors|be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635|6201001296"
-  "text-encoder|https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf|eed555233267a33c7e8ee31682762cc7751b3f6d224039086e0e846f05fffa5d|4280405792"
-  "vae|https://huggingface.co/Comfy-Org/Z-Image-Turbo/resolve/main/split_files/vae/ae.safetensors|afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38|335304388"
-)
+MODEL_DIFFUSION="diffusion|https://huggingface.co/Comfy-Org/Z-Image-Turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors|be517ebd47c912a5626a588e1aeea43e6be4a43c0cdcd2b48a2a780d9f358635|6201001296"
+MODEL_TE_Q8="text-encoder (Q8_0)|https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf|eed555233267a33c7e8ee31682762cc7751b3f6d224039086e0e846f05fffa5d|4280405792"
+MODEL_TE_Q4="text-encoder (Q4_K_M · 16 GB iGPU)|https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf|f6f851777709861056efcdad3af01da38b31223a3ba26e61a4f8bf3a2195813a|0"
+MODEL_VAE="vae|https://huggingface.co/Comfy-Org/Z-Image-Turbo/resolve/main/split_files/vae/ae.safetensors|afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38|335304388"
 
 need() { command -v "$1" >/dev/null 2>&1 || die "missing '$1'. $2"; }
 
@@ -54,8 +53,14 @@ build_engine() {
         fi
       done
       ;;
+    vulkan)
+      flags+=(-DSD_VULKAN=ON)
+      ;;
+    rocm)
+      flags+=(-DSD_HIPBLAS=ON)
+      ;;
     *)
-      die "No supported GPU found. freeimage-local needs an Apple Silicon Mac or an NVIDIA RTX GPU (Linux / WSL2)."
+      die "No supported GPU found. freeimage-local needs an AMD iGPU/GPU (Vulkan/ROCm), Apple Silicon Mac, or NVIDIA RTX GPU."
       ;;
   esac
 
@@ -81,17 +86,29 @@ build_engine() {
 }
 
 download_models() {
-  step "Downloading models (~10.8 GB, resumable)"
+  detect_platform
+  local te_entry="$MODEL_TE_Q8"
+  if [ "${FI_LLM_QUANT:-}" != q8 ] && { [ "$FI_IS_IGPU" = 1 ] || [ "$FI_RAM_GB" -le 18 ] || [ "${FI_LLM_QUANT:-}" = q4 ]; }; then
+    te_entry="$MODEL_TE_Q4"
+    step "Downloading models (~9.0 GB for 16 GB AMD iGPU, resumable)"
+  else
+    step "Downloading models (~10.8 GB, resumable)"
+  fi
+  local models=("$MODEL_DIFFUSION" "$te_entry" "$MODEL_VAE")
   need curl "Install curl first."
   mkdir -p "$FI_HOME/models"
   local entry name url sha bytes file
-  for entry in "${MODELS[@]}"; do
+  for entry in "${models[@]}"; do
     IFS='|' read -r name url sha bytes <<<"$entry"
     file="$FI_HOME/models/$(basename "$url")"
-    if [ -f "$file" ] && [ "$(file_size "$file")" = "$bytes" ]; then
+    if [ -f "$file" ] && [ "$bytes" != 0 ] && [ "$(file_size "$file")" = "$bytes" ]; then
+      info "$name: already downloaded"
+    elif [ -f "$file" ] && [ "$bytes" = 0 ] && [ "$(sha256 "$file")" = "$sha" ]; then
       info "$name: already downloaded"
     else
-      info "$name: $(basename "$url") ($(human "$bytes"))"
+      local size_label=""
+      [ "$bytes" != 0 ] && size_label=" ($(human "$bytes"))"
+      info "$name: $(basename "$url")$size_label"
       curl -fL --retry 5 --retry-delay 3 -C - --progress-bar -o "$file" "$url" \
         || die "download failed for $name. Run ./install.sh --models again to resume."
     fi
